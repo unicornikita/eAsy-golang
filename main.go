@@ -23,6 +23,8 @@ type izbranRazred struct {
 	izbranrazred string
 }
 
+var dnevi [9][6]vsebina = [9][6]vsebina{}
+
 func main() {
 
 	//hashmap with string index and string value
@@ -32,9 +34,10 @@ func main() {
 		e.ForEach("option", func(opt int, option *colly.HTMLElement) {
 			razredi[option.Text] = option.Attr("value")
 		})
+		getschedule(razredi[razred.izbranrazred])
 	})
 	//get class i want from app
-	http.HandleFunc("setClass", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/setClass", func(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
 		var razred izbranRazred
 		err := decoder.Decode(&razred)
@@ -44,8 +47,27 @@ func main() {
 		getschedule(razredi[razred.izbranrazred])
 	})
 
+	http.HandleFunc("/danes", func(w http.ResponseWriter, r *http.Request) {
+
+		indexDneva := int(time.Now().Weekday()) - 1
+		var urnikDanes [9]vsebina = [9]vsebina{}
+		for i := 0; i < 9; i++ {
+			urnikDanes[i] = dnevi[i][indexDneva]
+		}
+		sendData(w, r, urnikDanes)
+	})
+
+	http.HandleFunc("/allClasses", func(w http.ResponseWriter, r *http.Request) {
+		imenarazredov := []string{}
+		for k := range razredi {
+			imenarazredov = append(imenarazredov, k)
+		}
+		b, _ := json.Marshal(imenarazredov)
+		fmt.Fprintf(w, string(b))
+	})
+
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/242982")
-	http.ListenAndServe(":80", nil)
+	http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/easy-matura.ddns.net/fullchain.pem", "/etc/letsencrypt/live/easy-matura.ddns.net/privkey.pem", nil)
 }
 
 func getschedule(razred string) {
@@ -57,7 +79,6 @@ func getschedule(razred string) {
 	ctx := context.Background()
 	client, err := app.Messaging(ctx)
 	urnik := []vsebina{}
-	dnevi := [9][6]vsebina{}
 	c := colly.NewCollector()
 	c.OnHTML("table.ednevnik-seznam_ur_teden", func(e *colly.HTMLElement) {
 		e.ForEach("table.ednevnik-seznam_ur_teden > tbody > tr", func(indextr int, tr *colly.HTMLElement) {
@@ -74,7 +95,7 @@ func getschedule(razred string) {
 		})
 		//fmt.Println(dnevi)
 
-		for ura := 0; ura < 11; ura++ {
+		for ura := 0; ura < 9; ura++ {
 			for dan := 0; dan < 6; dan++ {
 				fmt.Print(dnevi[ura][dan])
 			}
@@ -109,4 +130,9 @@ func getschedule(razred string) {
 	//set class i want to get schedule from
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/" + razred)
 
+}
+
+func sendData(w http.ResponseWriter, r *http.Request, data [9]vsebina) {
+	b, _ := json.Marshal(data)
+	fmt.Fprintf(w, string(b))
 }
