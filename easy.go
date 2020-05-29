@@ -19,7 +19,6 @@ import (
 type vsebina struct {
 	Predmet  string
 	Profesor string
-	StPredmetov int
 }
 
 var dnevi [9][6]vsebina = [9][6]vsebina{}
@@ -108,14 +107,12 @@ func getschedule(razred string) {
 		e.ForEach("table.ednevnik-seznam_ur_teden > tbody > tr", func(indextr int, tr *colly.HTMLElement) {
 			tr.ForEach("table.ednevnik-seznam_ur_teden > tbody > tr > td", func(indextd int, td *colly.HTMLElement) {
 				predmet := td.DOM.Find(".text14").Text()
-				tr.DOM.Children
-				if numPredmetov > 1 {
-					fmt.Println("Predmetov je")
-					fmt.Println(numPredmetov)
-				}
-
-				numPredmetov = 0
 				profesor := td.DOM.Find(".text11").Text()
+				children := td.DOM.Children()
+				if children.Length() > 1 {
+					predmet = children.First().Find(".text14").Text()
+					profesor = children.First().Find(".text11").Text()
+				}
 				prebraniPodatki := vsebina{strings.TrimSpace(predmet), strings.TrimSpace(profesor)}
 				urnik = append(urnik, prebraniPodatki)
 				//fmt.Println(predmet)
