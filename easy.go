@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"context"
-
 	firebase "firebase.google.com/go"
 	"firebase.google.com/go/messaging"
 	"github.com/gocolly/colly"
@@ -18,8 +17,9 @@ import (
 )
 
 type vsebina struct {
-	predmet  string
-	profesor string
+	Predmet  string
+	Profesor string
+	StPredmetov int
 }
 
 var dnevi [9][6]vsebina = [9][6]vsebina{}
@@ -50,20 +50,24 @@ func main() {
 
 	})
 	//get class i want from app
-
+	//schedule for current day
 	http.HandleFunc("/danes/", func(w http.ResponseWriter, r *http.Request) {
 
 		razred := strings.TrimPrefix(r.URL.Path, "/danes/")
-		getschedule(razred)
+		getschedule(razredi[razred])
 
-		indexDneva := int(time.Now().Weekday()) - 1
+		indexDneva := int(time.Now().Weekday())
+		if int(time.Now().Weekday()) == 0 || int(time.Now().Weekday()) == 6 {
+			indexDneva = 1
+		}
+
 		var urnikDanes [9]vsebina = [9]vsebina{}
 		for i := 0; i < 9; i++ {
 			urnikDanes[i] = dnevi[i][indexDneva]
 		}
 		sendData(w, r, urnikDanes)
 	})
-
+	//schedule for selected other day
 	http.HandleFunc("/izbranDan/", func(w http.ResponseWriter, r *http.Request) {
 		podatki := strings.TrimPrefix(r.URL.Path, "/izbranDan/")
 		izbranRazred := strings.Split(podatki, "/")[0]
@@ -71,7 +75,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		getschedule(izbranRazred)
+		getschedule(razredi[izbranRazred])
 
 		var izbranUrnik [9]vsebina = [9]vsebina{}
 		for i := 0; i < 9; i++ {
@@ -79,7 +83,7 @@ func main() {
 		}
 		sendData(w, r, izbranUrnik)
 	})
-
+	//send all classes to app
 	http.HandleFunc("/allClasses", func(w http.ResponseWriter, r *http.Request) {
 		imenarazredov := []string{}
 		for k := range razredi {
@@ -89,7 +93,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Fprintf(w, string(b))
+		fmt.Fprint(w, string(b))
 	})
 
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/242982")
@@ -104,11 +108,18 @@ func getschedule(razred string) {
 		e.ForEach("table.ednevnik-seznam_ur_teden > tbody > tr", func(indextr int, tr *colly.HTMLElement) {
 			tr.ForEach("table.ednevnik-seznam_ur_teden > tbody > tr > td", func(indextd int, td *colly.HTMLElement) {
 				predmet := td.DOM.Find(".text14").Text()
+				tr.DOM.Children
+				if numPredmetov > 1 {
+					fmt.Println("Predmetov je")
+					fmt.Println(numPredmetov)
+				}
+
+				numPredmetov = 0
 				profesor := td.DOM.Find(".text11").Text()
 				prebraniPodatki := vsebina{strings.TrimSpace(predmet), strings.TrimSpace(profesor)}
 				urnik = append(urnik, prebraniPodatki)
-				//fmt.Println(strings.TrimSpace(neki.predmet))
-				//fmt.Println(strings.TrimSpace(neki.profesor))
+				//fmt.Println(predmet)
+				//fmt.Println(profesor)
 				//fmt.Println(indextd)
 				dnevi[indextr-1][indextd] = prebraniPodatki
 			})
@@ -121,35 +132,9 @@ func getschedule(razred string) {
 			}
 			fmt.Println()
 		}*/
-
-		ure := []string{"7.05", "7.50", "8.40", "9.30", "10.20", "11.10", "12.00", "12.50", "13.40"}
-		danasnjiDan := int(time.Now().Weekday()) + 1
-		fmt.Println(danasnjiDan)
-		for i := 1; i < 9; i++ {
-			fmt.Println(i)
-			stringToTime, _ := time.Parse("15.04", ure[i])
-			timeDIFF := stringToTime.Sub(time.Now())
-
-			topic := "notification"
-			message := &messaging.Message{
-				Data: map[string]string{
-					"imePredmeta": dnevi[i][danasnjiDan].predmet,
-					"profesor":    dnevi[i][danasnjiDan].profesor,
-				},
-				Topic: topic,
-			}
-			// Send a message to the devices subscribed to the provided topic.
-			response, err := client.Send(ctx, message)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			// Response is a message ID string.
-			fmt.Println("Successfully sent message:", response)
-
-			time.AfterFunc(timeDIFF, func() {
-			})
-		}
 	})
+
+	go sendToFirebase()
 	//set class i want to get schedule from
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/" + razred)
 
@@ -158,4 +143,40 @@ func getschedule(razred string) {
 func sendData(w http.ResponseWriter, r *http.Request, data [9]vsebina) {
 	b, _ := json.Marshal(data)
 	fmt.Fprintf(w, string(b))
+	fmt.Print(string(b))
+}
+
+func sendToFirebase() {
+	ure := []string{"7.00", "7.50", "8.40", "9.30", "10.20", "11.10", "12.00", "12.50", "13.40"}
+	danasnjiDan := int(time.Now().Weekday())
+	if int(time.Now().Weekday()) == 0 || int(time.Now().Weekday()) == 6 {
+		danasnjiDan = 1
+	}
+	fmt.Println(danasnjiDan)
+	for i := 1; i < 9; i++ {
+		fmt.Println(i)
+		stringToTime, _ := time.Parse("15.04", ure[i])
+		timeDIFF := stringToTime.Sub(time.Now())
+		go func(j int) {
+			time.Sleep(timeDIFF)
+			imePredmeta := dnevi[j][danasnjiDan].Predmet
+			profesor := dnevi[j][danasnjiDan].Profesor
+			message := &messaging.Message{
+				Notification: &messaging.Notification{
+					Title: imePredmeta,
+					Body:  profesor,
+				},
+				Topic: "notification",
+			}
+			// Send a message to the devices subscribed to the provided topic.
+			response, err := client.Send(ctx, message)
+			if err != nil {
+				log.Fatalln(err)
+			}
+
+			// Response is a message ID string.
+			fmt.Println("Successfully sent message:", response)
+		}(i)
+
+	}
 }
