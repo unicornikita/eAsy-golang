@@ -25,6 +25,7 @@ var dnevi [9][6]vsebina = [9][6]vsebina{}
 
 var client *messaging.Client
 var ctx context.Context
+var shranjenrazred string
 
 func main() {
 	ctx = context.Background()
@@ -53,6 +54,11 @@ func main() {
 	http.HandleFunc("/danes/", func(w http.ResponseWriter, r *http.Request) {
 
 		razred := strings.TrimPrefix(r.URL.Path, "/danes/")
+		if razred == "" {
+			razred = shranjenrazred
+		} else {
+			shranjenrazred = razred
+		}
 		getschedule(razredi[razred])
 
 		indexDneva := int(time.Now().Weekday())
