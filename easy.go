@@ -137,7 +137,7 @@ func getschedule(razred string) {
 		}*/
 	})
 
-	go sendToFirebase()
+	go sendToFirebase(razred)
 	//set class i want to get schedule from
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/" + razred)
 
@@ -149,7 +149,7 @@ func sendData(w http.ResponseWriter, r *http.Request, data [9]vsebina) {
 	fmt.Print(string(b))
 }
 
-func sendToFirebase() {
+func sendToFirebase(razred string) {
 	ure := []string{"7.00", "7.50", "8.40", "9.30", "10.20", "11.10", "12.00", "12.50", "13.40"}
 	danasnjiDan := int(time.Now().Weekday())
 	if int(time.Now().Weekday()) == 0 || int(time.Now().Weekday()) == 6 {
@@ -160,27 +160,27 @@ func sendToFirebase() {
 		fmt.Println(i)
 		stringToTime, _ := time.Parse("15.04", ure[i])
 		timeDIFF := stringToTime.Sub(time.Now())
-		if timeDIFF > 0{
+		if timeDIFF > 0 {
 			go func(j int) {
 				time.Sleep(timeDIFF)
 				imePredmeta := dnevi[j][danasnjiDan].Predmet
 				profesor := dnevi[j][danasnjiDan].Profesor
 				message := &messaging.Message{
 					Notification: &messaging.Notification{
-					Title: imePredmeta,
-					Body:  profesor,
+						Title: imePredmeta,
+						Body:  profesor,
 					},
-					Topic: "notification",
+					Topic:   "notification" + razred,
 					Android: &messaging.AndroidConfig{Priority: "HIGH"},
 				}
-			// Send a message to the devices subscribed to the provided topic.
-			response, err := client.Send(ctx, message)
-			if err != nil {
-				log.Fatalln(err)
-			}
+				// Send a message to the devices subscribed to the provided topic.
+				response, err := client.Send(ctx, message)
+				if err != nil {
+					log.Fatalln(err)
+				}
 
-			// Response is a message ID string.
-			fmt.Println("Successfully sent message:", response)
+				// Response is a message ID string.
+				fmt.Println("Successfully sent message:", response)
 			}(i)
 		}
 	}
