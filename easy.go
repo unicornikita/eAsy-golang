@@ -160,17 +160,19 @@ func sendToFirebase() {
 		fmt.Println(i)
 		stringToTime, _ := time.Parse("15.04", ure[i])
 		timeDIFF := stringToTime.Sub(time.Now())
-		go func(j int) {
-			time.Sleep(timeDIFF)
-			imePredmeta := dnevi[j][danasnjiDan].Predmet
-			profesor := dnevi[j][danasnjiDan].Profesor
-			message := &messaging.Message{
-				Notification: &messaging.Notification{
+		if timeDIFF > 0{
+			go func(j int) {
+				time.Sleep(timeDIFF)
+				imePredmeta := dnevi[j][danasnjiDan].Predmet
+				profesor := dnevi[j][danasnjiDan].Profesor
+				message := &messaging.Message{
+					Notification: &messaging.Notification{
 					Title: imePredmeta,
 					Body:  profesor,
-				},
-				Topic: "notification",
-			}
+					},
+					Topic: "notification",
+					Android: &messaging.AndroidConfig{Priority: "HIGH"},
+				}
 			// Send a message to the devices subscribed to the provided topic.
 			response, err := client.Send(ctx, message)
 			if err != nil {
@@ -179,7 +181,7 @@ func sendToFirebase() {
 
 			// Response is a message ID string.
 			fmt.Println("Successfully sent message:", response)
-		}(i)
-
+			}(i)
+		}
 	}
 }
