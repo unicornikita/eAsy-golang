@@ -26,8 +26,10 @@ var dnevi [9][6]vsebina = [9][6]vsebina{}
 var client *messaging.Client
 var ctx context.Context
 var shranjenrazred string
+var razredi = make(map[string]string)
 
 func main() {
+	mux := http.NewServeMux()
 	ctx = context.Background()
 	opt := option.WithCredentialsFile("/home/pi/Documents/easy-matura-config.json")
 	app, err := firebase.NewApp(ctx, nil, opt)
@@ -41,7 +43,7 @@ func main() {
 	client, err = app.Messaging(ctx)
 
 	//hashmap with string index and string value
-	razredi := make(map[string]string)
+
 	c := colly.NewCollector()
 	c.OnHTML("#id_parameter", func(e *colly.HTMLElement) {
 		e.ForEach("option", func(opt int, option *colly.HTMLElement) {
@@ -51,6 +53,28 @@ func main() {
 	})
 	//get class i want from app
 	//schedule for current day
+	mux.HandleFunc("/danes/", func(w http.ResponseWriter, r *http.Request) {
+
+		razred := strings.TrimPrefix(r.URL.Path, "/danes/")
+		if razred == "" {
+			razred = shranjenrazred
+		} else {
+			shranjenrazred = razred
+		}
+		getschedule(razredi[razred], razred)
+
+		indexDneva := int(time.Now().Weekday())
+		if int(time.Now().Weekday()) == 0 || int(time.Now().Weekday()) == 6 {
+			indexDneva = 1
+		}
+
+		var urnikDanes [9]vsebina = [9]vsebina{}
+		for i := 0; i < 9; i++ {
+			urnikDanes[i] = dnevi[i][indexDneva]
+		}
+		sendData(w, r, urnikDanes)
+	})
+
 	http.HandleFunc("/danes/", func(w http.ResponseWriter, r *http.Request) {
 
 		razred := strings.TrimPrefix(r.URL.Path, "/danes/")
@@ -59,7 +83,7 @@ func main() {
 		} else {
 			shranjenrazred = razred
 		}
-		getschedule(razredi[razred])
+		getschedule(razredi[razred], razred)
 
 		indexDneva := int(time.Now().Weekday())
 		if int(time.Now().Weekday()) == 0 || int(time.Now().Weekday()) == 6 {
@@ -80,7 +104,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		getschedule(razredi[izbranRazred])
+		getschedule(razredi[izbranRazred], izbranRazred)
 
 		var izbranUrnik [9]vsebina = [9]vsebina{}
 		for i := 0; i < 9; i++ {
@@ -100,13 +124,17 @@ func main() {
 		}
 		fmt.Fprint(w, string(b))
 	})
-
+	go func() {
+		log.Fatal(http.ListenAndServe(":80", mux))
+	}()
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/242982")
+
 	fmt.Println("listening on port 443")
 	log.Fatal(http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/easy-matura.ddns.net/fullchain.pem", "/etc/letsencrypt/live/easy-matura.ddns.net/privkey.pem", nil))
+
 }
 
-func getschedule(razred string) {
+func getschedule(razred string, razredstring string) {
 	urnik := []vsebina{}
 	c := colly.NewCollector()
 	c.OnHTML("table.ednevnik-seznam_ur_teden", func(e *colly.HTMLElement) {
@@ -137,7 +165,7 @@ func getschedule(razred string) {
 		}*/
 	})
 
-	go sendToFirebase(razred)
+	go sendToFirebase(razredstring)
 	//set class i want to get schedule from
 	c.Visit("https://www.easistent.com/urniki/5738623c4f3588f82583378c44ceb026102d6bae/razredi/" + razred)
 
@@ -156,12 +184,23 @@ func sendToFirebase(razred string) {
 		danasnjiDan = 1
 	}
 	fmt.Println(danasnjiDan)
-	for i := 1; i < 9; i++ {
+	for i := 0; i < 9; i++ {
 		fmt.Println(i)
+		now := time.Now()
 		stringToTime, _ := time.Parse("15.04", ure[i])
-		timeDIFF := stringToTime.Sub(time.Now())
+		location, err := time.LoadLocation("Europe/Ljubljana")
+		if err != nil {
+			log.Fatal(err)
+		}
+		danes := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+		danes = danes.Add(time.Hour * time.Duration(stringToTime.Hour()))
+		danes = danes.Add(time.Minute * time.Duration(stringToTime.Minute()))
+
+		timeDIFF := danes.Sub(time.Now())
+		fmt.Println(timeDIFF)
 		if timeDIFF > 0 {
 			go func(j int) {
+				fmt.Println("i sleep")
 				time.Sleep(timeDIFF)
 				imePredmeta := dnevi[j][danasnjiDan].Predmet
 				profesor := dnevi[j][danasnjiDan].Profesor
@@ -171,9 +210,10 @@ func sendToFirebase(razred string) {
 						Body:  profesor,
 					},
 					Topic:   "notification" + razred,
-					Android: &messaging.AndroidConfig{Priority: "HIGH"},
+					Android: &messaging.AndroidConfig{Priority: "high"},
 				}
 				// Send a message to the devices subscribed to the provided topic.
+				fmt.Println("passed the if and sent a notification 1")
 				response, err := client.Send(ctx, message)
 				if err != nil {
 					log.Fatalln(err)
